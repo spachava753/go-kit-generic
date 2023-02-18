@@ -92,16 +92,12 @@ func encodeResponse(_ context.Context, w http.ResponseWriter, response interface
 func main() {
 	svc := stringService{}
 
-	countHandler := httptransport.NewServer(
-		makeCountEndpoint(svc),
-		decodeCountRequest,
-		encodeResponse,
-	)
-
 	createHttpHandler("/uppercase", makeUppercaseEndpoint(svc),
 		decodeUppercaseRequest,
 		encodeResponse)
-	http.Handle("/count", countHandler)
+	createHttpHandler("/count", makeCountEndpoint(svc),
+		decodeCountRequest,
+		encodeResponse)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
