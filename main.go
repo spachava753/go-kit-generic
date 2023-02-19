@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-kit/kit/endpoint"
 	httptransport "github.com/go-kit/kit/transport/http"
 	"log"
 	"net/http"
@@ -50,7 +49,9 @@ type countResponse struct {
 	V int `json:"v"`
 }
 
-func makeUppercaseEndpoint(svc StringService) endpoint.Endpoint {
+type Endpoint func(ctx context.Context, request interface{}) (response interface{}, err error)
+
+func makeUppercaseEndpoint(svc StringService) Endpoint {
 	return func(_ context.Context, request interface{}) (interface{}, error) {
 		req := request.(uppercaseRequest)
 		v, err := svc.Uppercase(req.S)
@@ -61,7 +62,7 @@ func makeUppercaseEndpoint(svc StringService) endpoint.Endpoint {
 	}
 }
 
-func makeCountEndpoint(svc StringService) endpoint.Endpoint {
+func makeCountEndpoint(svc StringService) Endpoint {
 	return func(_ context.Context, request interface{}) (interface{}, error) {
 		req := request.(countRequest)
 		v := svc.Count(req.S)
@@ -101,7 +102,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func createHttpHandler(path string, e endpoint.Endpoint,
+func createHttpHandler(path string, e Endpoint,
 	dec httptransport.DecodeRequestFunc,
 	enc httptransport.EncodeResponseFunc) {
 	http.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
