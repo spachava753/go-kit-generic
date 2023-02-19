@@ -35,9 +35,17 @@ type uppercaseRequest struct {
 	S string `json:"s"`
 }
 
+func (u uppercaseRequest) String() string {
+	return fmt.Sprintf("S: %s", u.S)
+}
+
 type uppercaseResponse struct {
 	V   string `json:"v"`
 	Err string `json:"err,omitempty"` // errors don't JSON-marshal, so we use a string
+}
+
+func (u uppercaseResponse) String() string {
+	return fmt.Sprintf("V: %s", u.V)
 }
 
 type countRequest struct {
@@ -49,6 +57,36 @@ type countResponse struct {
 }
 
 type Endpoint[Req any, Resp any] func(ctx context.Context, request Req) (response Resp, err error)
+
+type Middleware[Req any, Resp any] func(Endpoint[Req, Resp]) Endpoint[Req, Resp]
+
+func Chain[Req any, Resp any](outer Middleware[Req, Resp], others ...Middleware[Req, Resp]) Middleware[Req, Resp] {
+	return func(next Endpoint[Req, Resp]) Endpoint[Req, Resp] {
+		for i := len(others) - 1; i >= 0; i-- { // reverse
+			next = others[i](next)
+		}
+		return outer(next)
+	}
+}
+
+func annotate[Req any, Resp any](s string) Middleware[Req, Resp] {
+	return func(next Endpoint[Req, Resp]) Endpoint[Req, Resp] {
+		return func(ctx context.Context, request Req) (Resp, error) {
+			fmt.Println(s, "pre")
+			defer fmt.Println(s, "post")
+			return next(ctx, request)
+		}
+	}
+}
+
+func logIt[Req fmt.Stringer, Resp fmt.Stringer]() Middleware[Req, Resp] {
+	return func(next Endpoint[Req, Resp]) Endpoint[Req, Resp] {
+		return func(ctx context.Context, request Req) (Resp, error) {
+			fmt.Printf("endpoint middleware req: %s\n", request.String())
+			return next(ctx, request)
+		}
+	}
+}
 
 type DecodeRequestFunc[Req any] func(context.Context, *http.Request) (request Req, err error)
 
@@ -98,7 +136,13 @@ func encodeCountResponse(_ context.Context, w http.ResponseWriter, response coun
 func main() {
 	svc := stringService{}
 
-	createHttpHandler("/uppercase", makeUppercaseEndpoint(svc),
+	uppercaseEndpoint := Chain[uppercaseRequest, uppercaseResponse](
+		annotate[uppercaseRequest, uppercaseResponse]("first"),
+		annotate[uppercaseRequest, uppercaseResponse]("second"),
+		annotate[uppercaseRequest, uppercaseResponse]("third"),
+		logIt[uppercaseRequest, uppercaseResponse](),
+	)(makeUppercaseEndpoint(svc))
+	createHttpHandler("/uppercase", uppercaseEndpoint,
 		decodeUppercaseRequest,
 		encodeUppercaseResponse)
 	createHttpHandler("/count", makeCountEndpoint(svc),
