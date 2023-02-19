@@ -48,16 +48,15 @@ type countResponse struct {
 	V int `json:"v"`
 }
 
-type Endpoint func(ctx context.Context, request interface{}) (response interface{}, err error)
+type Endpoint[Req any, Resp any] func(ctx context.Context, request Req) (response Resp, err error)
 
-type DecodeRequestFunc func(context.Context, *http.Request) (request interface{}, err error)
+type DecodeRequestFunc[Req any] func(context.Context, *http.Request) (request Req, err error)
 
-type EncodeResponseFunc func(context.Context, http.ResponseWriter, interface{}) error
+type EncodeResponseFunc[Resp any] func(context.Context, http.ResponseWriter, Resp) error
 
-func makeUppercaseEndpoint(svc StringService) Endpoint {
-	return func(_ context.Context, request interface{}) (interface{}, error) {
-		req := request.(uppercaseRequest)
-		v, err := svc.Uppercase(req.S)
+func makeUppercaseEndpoint(svc StringService) Endpoint[uppercaseRequest, uppercaseResponse] {
+	return func(_ context.Context, request uppercaseRequest) (uppercaseResponse, error) {
+		v, err := svc.Uppercase(request.S)
 		if err != nil {
 			return uppercaseResponse{v, err.Error()}, nil
 		}
@@ -65,31 +64,34 @@ func makeUppercaseEndpoint(svc StringService) Endpoint {
 	}
 }
 
-func makeCountEndpoint(svc StringService) Endpoint {
-	return func(_ context.Context, request interface{}) (interface{}, error) {
-		req := request.(countRequest)
-		v := svc.Count(req.S)
+func makeCountEndpoint(svc StringService) Endpoint[countRequest, countResponse] {
+	return func(_ context.Context, request countRequest) (countResponse, error) {
+		v := svc.Count(request.S)
 		return countResponse{v}, nil
 	}
 }
 
-func decodeUppercaseRequest(_ context.Context, r *http.Request) (interface{}, error) {
+func decodeUppercaseRequest(_ context.Context, r *http.Request) (uppercaseRequest, error) {
 	var request uppercaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		return nil, err
+		return uppercaseRequest{}, err
 	}
 	return request, nil
 }
 
-func decodeCountRequest(_ context.Context, r *http.Request) (interface{}, error) {
+func decodeCountRequest(_ context.Context, r *http.Request) (countRequest, error) {
 	var request countRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		return nil, err
+		return countRequest{}, err
 	}
 	return request, nil
 }
 
-func encodeResponse(_ context.Context, w http.ResponseWriter, response interface{}) error {
+func encodeUppercaseResponse(_ context.Context, w http.ResponseWriter, response uppercaseResponse) error {
+	return json.NewEncoder(w).Encode(response)
+}
+
+func encodeCountResponse(_ context.Context, w http.ResponseWriter, response countResponse) error {
 	return json.NewEncoder(w).Encode(response)
 }
 
@@ -98,16 +100,16 @@ func main() {
 
 	createHttpHandler("/uppercase", makeUppercaseEndpoint(svc),
 		decodeUppercaseRequest,
-		encodeResponse)
+		encodeUppercaseResponse)
 	createHttpHandler("/count", makeCountEndpoint(svc),
 		decodeCountRequest,
-		encodeResponse)
+		encodeCountResponse)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func createHttpHandler(path string, e Endpoint,
-	dec DecodeRequestFunc,
-	enc EncodeResponseFunc) {
+func createHttpHandler[Req any, Resp any](path string, e Endpoint[Req, Resp],
+	dec DecodeRequestFunc[Req],
+	enc EncodeResponseFunc[Resp]) {
 	http.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		request, err := dec(ctx, r)
