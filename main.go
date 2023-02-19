@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	httptransport "github.com/go-kit/kit/transport/http"
 	"log"
 	"net/http"
 	"strings"
@@ -50,6 +49,10 @@ type countResponse struct {
 }
 
 type Endpoint func(ctx context.Context, request interface{}) (response interface{}, err error)
+
+type DecodeRequestFunc func(context.Context, *http.Request) (request interface{}, err error)
+
+type EncodeResponseFunc func(context.Context, http.ResponseWriter, interface{}) error
 
 func makeUppercaseEndpoint(svc StringService) Endpoint {
 	return func(_ context.Context, request interface{}) (interface{}, error) {
@@ -103,8 +106,8 @@ func main() {
 }
 
 func createHttpHandler(path string, e Endpoint,
-	dec httptransport.DecodeRequestFunc,
-	enc httptransport.EncodeResponseFunc) {
+	dec DecodeRequestFunc,
+	enc EncodeResponseFunc) {
 	http.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		request, err := dec(ctx, r)
