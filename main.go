@@ -134,20 +134,26 @@ func encodeCountResponse(_ context.Context, w http.ResponseWriter, response coun
 }
 
 func main() {
-	svc := stringService{}
+	stringSvc := stringService{}
+	addSvc := addServiceImpl{}
 
 	uppercaseEndpoint := Chain[uppercaseRequest, uppercaseResponse](
 		annotate[uppercaseRequest, uppercaseResponse]("first"),
 		annotate[uppercaseRequest, uppercaseResponse]("second"),
 		annotate[uppercaseRequest, uppercaseResponse]("third"),
 		logIt[uppercaseRequest, uppercaseResponse](),
-	)(makeUppercaseEndpoint(svc))
+	)(makeUppercaseEndpoint(stringSvc))
 	createHttpHandler("/uppercase", uppercaseEndpoint,
 		decodeUppercaseRequest,
 		encodeUppercaseResponse)
-	createHttpHandler("/count", makeCountEndpoint(svc),
+	createHttpHandler("/count", makeCountEndpoint(stringSvc),
 		decodeCountRequest,
 		encodeCountResponse)
+
+	createHttpHandler("/add", addSvc.Add,
+		createJsonRequestDecoder[addReq](),
+		createJsonResponseEncoder[addResponse]())
+
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
@@ -173,4 +179,47 @@ func createHttpHandler[Req any, Resp any](path string, e Endpoint[Req, Resp],
 			return
 		}
 	})
+}
+
+type AddService interface {
+	Add(ctx context.Context, req addReq) (addResponse, error)
+}
+
+type addReq struct {
+	A int `json:"a"`
+	B int `json:"b"`
+}
+
+type addResponse struct {
+	Result int `json:"result"`
+}
+
+type addServiceImpl struct{}
+
+func (a addServiceImpl) Add(ctx context.Context, req addReq) (addResponse, error) {
+	return addResponse{req.A + req.B}, nil
+}
+
+func decodeAddRequest(_ context.Context, r *http.Request) (addReq, error) {
+	var request addReq
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		return addReq{}, err
+	}
+	return request, nil
+}
+
+func createJsonRequestDecoder[Req any]() func(_ context.Context, r *http.Request) (Req, error) {
+	return func(_ context.Context, r *http.Request) (Req, error) {
+		var request Req
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			return request, err
+		}
+		return request, nil
+	}
+}
+
+func createJsonResponseEncoder[Resp any]() func(_ context.Context, w http.ResponseWriter, response Resp) error {
+	return func(_ context.Context, w http.ResponseWriter, response Resp) error {
+		return json.NewEncoder(w).Encode(response)
+	}
 }
